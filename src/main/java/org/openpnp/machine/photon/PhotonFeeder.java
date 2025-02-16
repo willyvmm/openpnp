@@ -300,6 +300,65 @@ public class PhotonFeeder extends ReferenceFeeder {
     }
 
     @Override
+    public boolean isAsync() {
+        return true;
+    }
+
+    @Override
+    public void feedAsync() throws Exception {
+        for (int i = 0; i <= photonProperties.getFeederCommunicationMaxRetry(); i++) {
+            findSlotAddressIfNeeded();
+            initializeIfNeeded();
+
+            if (!initialized) {
+                continue;
+            }
+
+            verifyFeederLocationIsFullyConfigured();
+
+            MoveFeedForward moveFeedForward = new MoveFeedForward(slotAddress, partPitch * 10);
+            MoveFeedForward.Response moveFeedForwardResponse = moveFeedForward.send(photonBus);
+
+            if (moveFeedForwardResponse == null) {
+                slotAddress = null;
+                initialized = false;
+                throw new FeedFailureException("Feed command timed out");
+            } else if (moveFeedForwardResponse.error == ErrorTypes.UNINITIALIZED_FEEDER) {
+                slotAddress = null;
+                initialized = false;
+                continue;  // We'll initialize it on a retry
+            }
+
+            return;
+        }
+
+        throw new FeedFailureException("Failed to feed Async for an unknown reason. Is the feeder inserted?");
+    }
+
+    @Override
+    public void feedAsyncWaitForReady() throws Exception {
+        // send status requests until it comes back without timeout
+        for (int i = 0; i < 50; i++) {
+            MoveFeedStatus moveFeedStatus = new MoveFeedStatus(slotAddress);
+            MoveFeedStatus.Response moveFeedStatusResponse = moveFeedStatus.send(photonBus);
+
+            if (moveFeedStatusResponse == null) {
+                // sleep for 1 second and try again
+                Thread.sleep(100);
+                continue; // Timeout. retry after delay.
+            }
+
+            if (moveFeedStatusResponse.error == ErrorTypes.NONE) {
+                return;
+            } else if (moveFeedStatusResponse.error == ErrorTypes.COULD_NOT_REACH) {
+                throw new FeedFailureException("Feeder could not reach its destination.");
+            } else if(moveFeedStatusResponse.error == ErrorTypes.UNINITIALIZED_FEEDER) {
+                throw new FeedFailureException("Feeder is uninitialized.");
+            }
+        }
+    }
+
+    @Override
     public String getPropertySheetHolderTitle() {
         String classSimpleName = getClass().getSimpleName();
         if (hardwareId == null) {

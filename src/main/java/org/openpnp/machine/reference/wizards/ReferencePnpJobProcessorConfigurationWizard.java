@@ -40,6 +40,9 @@ import com.jgoodies.forms.layout.FormLayout;
 import com.jgoodies.forms.layout.FormSpecs;
 import com.jgoodies.forms.layout.RowSpec;
 
+import java.awt.event.ItemEvent;
+import java.awt.event.ItemListener;
+
 @SuppressWarnings("serial")
 public class ReferencePnpJobProcessorConfigurationWizard extends AbstractConfigurationWizard {
     private final ReferencePnpJobProcessor jobProcessor;
@@ -49,6 +52,9 @@ public class ReferencePnpJobProcessorConfigurationWizard extends AbstractConfigu
     private JCheckBox steppingToNextMotion;
     private JCheckBox optimizeMultipleNozzles;
     private JCheckBox preRotateAllNozzles;
+    private JCheckBox useAsyncFeed;
+    private JCheckBox feedAfterPick;
+    private JCheckBox avoidConsecutivePicksFromSameFeeder;
     
     public ReferencePnpJobProcessorConfigurationWizard(ReferencePnpJobProcessor jobProcessor) {
         this.jobProcessor = jobProcessor;
@@ -120,6 +126,70 @@ public class ReferencePnpJobProcessorConfigurationWizard extends AbstractConfigu
 
         preRotateAllNozzles = new JCheckBox(); 
         panelGeneral.add(preRotateAllNozzles, "4, 12");
+
+        JPanel panelFeedOptimalization = new JPanel();
+        panelFeedOptimalization.setBorder(new TitledBorder(null, Translations.getString(
+                "ReferencePnpJobProcessorConfigurationWizard.FeedOptimalizationPanel.Border.title"),
+                TitledBorder.LEADING, TitledBorder.TOP, null, null));
+        contentPanel.add(panelFeedOptimalization);
+        panelFeedOptimalization.setLayout(new FormLayout(new ColumnSpec[] {
+                FormSpecs.RELATED_GAP_COLSPEC,
+                FormSpecs.DEFAULT_COLSPEC,
+                FormSpecs.RELATED_GAP_COLSPEC,
+                FormSpecs.DEFAULT_COLSPEC,},
+                new RowSpec[] {
+                        FormSpecs.RELATED_GAP_ROWSPEC,
+                        FormSpecs.DEFAULT_ROWSPEC,
+                        FormSpecs.RELATED_GAP_ROWSPEC,
+                        FormSpecs.DEFAULT_ROWSPEC,
+                        FormSpecs.RELATED_GAP_ROWSPEC,
+                        FormSpecs.RELATED_GAP_ROWSPEC,
+                        FormSpecs.DEFAULT_ROWSPEC,}));
+
+        JLabel lblUseAsyncFeed = new JLabel(Translations.getString("ReferencePnpJobProcessorConfigurationWizard.lblUseAsyncFeed.text")); //$NON-NLS-1$
+        lblUseAsyncFeed.setToolTipText(Translations.getString("ReferencePnpJobProcessorConfigurationWizard.lblUseAsyncFeed.toolTipText")); //$NON-NLS-1$
+        panelFeedOptimalization.add(lblUseAsyncFeed, "2, 2, right, default");
+
+        useAsyncFeed = new JCheckBox();
+        panelFeedOptimalization.add(useAsyncFeed, "4, 2");
+
+        JLabel lblFeedAfterPick = new JLabel(Translations.getString("ReferencePnpJobProcessorConfigurationWizard.lblFeedAfterPick.text")); //$NON-NLS-1$
+        lblFeedAfterPick.setToolTipText(Translations.getString("ReferencePnpJobProcessorConfigurationWizard.lblFeedAfterPick.toolTipText")); //$NON-NLS-1$
+        panelFeedOptimalization.add(lblFeedAfterPick, "2, 4, right, default");
+
+        feedAfterPick = new JCheckBox();
+        feedAfterPick.setEnabled(useAsyncFeed.isSelected());
+        panelFeedOptimalization.add(feedAfterPick, "4, 4");
+
+        /*
+         * This logic is important to keep code of job processor tidy.
+         * Settings FAP without Async have no use case and is disabled here.
+         * If for some reason FAP is enabled without async, the job processor may become unpredictable.
+         * However - should be properly handled in ReferencePnpJobProcessor.
+         */
+        useAsyncFeed.addItemListener(new ItemListener() {
+            @Override
+            public void itemStateChanged(ItemEvent e) {
+                switch (e.getStateChange()) {
+                    case ItemEvent.DESELECTED:
+                        if (feedAfterPick.isSelected()) {
+                            feedAfterPick.doClick();
+                        }
+                    case ItemEvent.SELECTED:
+                        feedAfterPick.setEnabled(useAsyncFeed.isSelected());
+                        break;
+                    default:
+                }
+            }
+        });
+
+        JLabel lblAvoidConsecutivePicksFromSameFeeder = new JLabel(Translations.getString("ReferencePnpJobProcessorConfigurationWizard.lblAvoidConsecutivePicksFromSameFeeder.text")); //$NON-NLS-1$
+        lblAvoidConsecutivePicksFromSameFeeder.setToolTipText(Translations.getString("ReferencePnpJobProcessorConfigurationWizard.lblAvoidConsecutivePicksFromSameFeeder.toolTipText")); //$NON-NLS-1$
+        panelFeedOptimalization.add(lblAvoidConsecutivePicksFromSameFeeder, "2, 7, right, default");
+
+        avoidConsecutivePicksFromSameFeeder = new JCheckBox();
+        panelFeedOptimalization.add(avoidConsecutivePicksFromSameFeeder, "4, 7");
+
     }
 
     @Override
@@ -132,7 +202,10 @@ public class ReferencePnpJobProcessorConfigurationWizard extends AbstractConfigu
         addWrappedBinding(jobProcessor, "steppingToNextMotion", steppingToNextMotion, "selected");
         addWrappedBinding(jobProcessor, "optimizeMultipleNozzles", optimizeMultipleNozzles, "selected");
         addWrappedBinding(jobProcessor, "preRotateAllNozzles", preRotateAllNozzles, "selected");
-        
+        addWrappedBinding(jobProcessor, "feedAfterPick", feedAfterPick, "selected");
+        addWrappedBinding(jobProcessor, "useAsyncFeed", useAsyncFeed, "selected");
+        addWrappedBinding(jobProcessor, "avoidConsecutivePicksFromSameFeeder", avoidConsecutivePicksFromSameFeeder, "selected");
+
         ComponentDecorators.decorateWithAutoSelect(maxVisionRetriesTextField);
     }
 }

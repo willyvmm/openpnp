@@ -167,4 +167,19 @@ public abstract class AbstractFeeder extends AbstractModelObject implements Feed
     public void takeBackPart(Nozzle nozzle) throws Exception {
         throw new UnsupportedOperationException("Not supported on this Feeder");
     }
+
+    @Override
+    public boolean isAsync() {
+        return false;
+    }
+
+    @Override
+    public void feedAsync() throws Exception {
+        throw new UnsupportedOperationException("Asynchronous feed is not supported on this Feeder");
+    }
+
+    @Override
+    public void feedAsyncWaitForReady() throws Exception{
+        throw new UnsupportedOperationException("Asynchronous feed is not supported on this Feeder");
+    }
 }

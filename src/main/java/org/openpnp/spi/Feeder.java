@@ -133,4 +133,25 @@ public interface Feeder extends Identifiable, Named, WizardConfigurable, Propert
      * @return
      */
     public int getPickRetryCount();
+
+    /**
+     * Support for asynchronous feed actions.
+     * @return
+     */
+    public boolean isAsync();
+
+    /**
+     * Perform asynchronous feed action. May be usable with slow feeders.
+     * Async feed action may not interact with head, due to async nature.
+     * @throws Exception
+     */
+    public void feedAsync() throws Exception;
+
+    /**
+     * Should be called before pick action, to make sure feeder is ready for pick.
+     * In case of async feed still in progress, function wait until feed process complete.
+     * @throws Exception
+     */
+    public void feedAsyncWaitForReady() throws Exception;
+
 }

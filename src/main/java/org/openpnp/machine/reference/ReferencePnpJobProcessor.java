@@ -109,7 +109,16 @@ public class ReferencePnpJobProcessor extends AbstractPnpJobProcessor {
     boolean optimizeMultipleNozzles = true;
 
     @Attribute(required = false)
-    boolean allowImmediateNozzleTipCalibration = false;
+    boolean feedAfterPick = false;
+
+    @Attribute(required = false)
+    boolean useAsyncFeed = false;
+
+    @Attribute(required = false)
+    static boolean avoidConsecutivePicksFromSameFeeder = false;
+
+    @Attribute(required = false)
+    static boolean allowImmediateNozzleTipCalibration = false;
 
     /**
      * Number of ficudial nesting level to check separately before checking the remaining all at once.
@@ -1231,18 +1240,25 @@ public class ReferencePnpJobProcessor extends AbstractPnpJobProcessor {
                 catch (Exception e) {
                     throw new JobProcessorException(null, e);
                 }
-                
-                /**
-                 * Feed the feeder, retrying up to feedRetryCount times. That happens within the
-                 * feed method. It will either succeed or throw after the retries. We catch the
-                 * Exception so that we can continue the loop.
-                 */
-                try {
-                    feed(feeder, nozzle);
-                }
-                catch (JobProcessorException jpe) {
-                    lastException = jpe;
-                    continue;
+
+                if (useAsyncFeed && feeder.isAsync()) {
+                    if (!feedAfterPick) {
+                        try {
+                            //Feed async
+                            feed(feeder, nozzle, true);
+                        } catch (JobProcessorException jpe) {
+                            lastException = jpe;
+                            continue;
+                        }
+                    }
+                } else {
+                    try {
+                        //Feed standard
+                        feed(feeder, nozzle, false);
+                    } catch (JobProcessorException jpe) {
+                        lastException = jpe;
+                        continue;
+                    }
                 }
 
                 /**
@@ -1254,6 +1270,9 @@ public class ReferencePnpJobProcessor extends AbstractPnpJobProcessor {
                  */
                 checkPartOff(nozzle, part);
 
+                /*
+                 *Move the head to the pick position and perform pick
+                 */
                 try {
                     feederPickRetry(nozzle, feeder, jobPlacement, part);
                 }
@@ -1262,7 +1281,14 @@ public class ReferencePnpJobProcessor extends AbstractPnpJobProcessor {
                     discard(nozzle);
                     continue;
                 }
-                
+
+                /**
+                 * Feed after pick. Use async feed if available and enabled.
+                 */
+                if (feedAfterPick && useAsyncFeed && feeder.isAsync()) {
+                    feed(feeder, nozzle, true);
+                }
+
                 /**
                  * If we get here with no problems then we are done.
                  */
@@ -1276,7 +1302,7 @@ public class ReferencePnpJobProcessor extends AbstractPnpJobProcessor {
             throw lastException;
         }
         
-        private void feed(Feeder feeder, Nozzle nozzle) throws JobProcessorException {
+        private void feed(Feeder feeder, Nozzle nozzle, boolean async) throws JobProcessorException {
             Exception lastException = null;
 
             Map<String, Object> globals = new HashMap<>();
@@ -1289,7 +1315,11 @@ public class ReferencePnpJobProcessor extends AbstractPnpJobProcessor {
                     fireTextStatus("Feed %s on %s.", feeder.getName(), feeder.getPart().getId());
                     
                     Configuration.get().getScripting().on("Feeder.BeforeFeed", globals);
-                    feeder.feed(nozzle);
+                    if (async) {
+                        feeder.feedAsync();
+                    } else {
+                        feeder.feed(nozzle);
+                    }
                     Configuration.get().getScripting().on("Feeder.AfterFeed", globals);
                     return;
                 }
@@ -1348,6 +1378,17 @@ public class ReferencePnpJobProcessor extends AbstractPnpJobProcessor {
 
                 // Move to pick location.
                 nozzle.moveToPickLocation(feeder);
+
+                /**
+                 * Check if feeder is ready and - if necessary - wait until finish the feed action.
+                 */
+                if (useAsyncFeed && feeder.isAsync()) {
+                    try {
+                        feeder.feedAsyncWaitForReady();
+                    } catch (Exception e) {
+                        throw new JobProcessorException(null, e);
+                    }
+                }
 
                 // Pick
                 nozzle.pick(part);
@@ -1898,6 +1939,30 @@ public class ReferencePnpJobProcessor extends AbstractPnpJobProcessor {
         this.optimizeMultipleNozzles = optimizeMultipleNozzles;
     }
 
+    public boolean isUseAsyncFeed() {
+        return useAsyncFeed;
+    }
+
+    public void setUseAsyncFeed(boolean useAsyncFeed) {
+        this.useAsyncFeed = useAsyncFeed;
+    }
+
+    public boolean isFeedAfterPick() {
+        return feedAfterPick;
+    }
+
+    public void setFeedAfterPick(boolean feedAfterPick) {
+        this.feedAfterPick = feedAfterPick;
+    }
+
+    public boolean isAvoidConsecutivePicksFromSameFeeder() {
+        return avoidConsecutivePicksFromSameFeeder;
+    }
+
+    public void setAvoidConsecutivePicksFromSameFeeder(boolean useAsyncFeed) {
+        avoidConsecutivePicksFromSameFeeder = useAsyncFeed;
+    }
+
     public boolean isPreRotateAllNozzles() {
         return preRotateAllNozzles;
     }
@@ -2362,7 +2427,7 @@ public class ReferencePnpJobProcessor extends AbstractPnpJobProcessor {
         protected Strategy strategy = Strategy.Minimize;
         
         private boolean restart;
-        
+
         @Override
         public Strategy getStrategy() {
             return strategy;
@@ -2384,7 +2449,13 @@ public class ReferencePnpJobProcessor extends AbstractPnpJobProcessor {
              * Create an empty List<PlannedPlacement> which will hold the results.
              */
             List<PlannedPlacement> plannedPlacements = new ArrayList<>();
-            
+
+            /**
+             * Create an empty List<alreadySelectedParts>. It's almost the same as above but holds only Part's
+             * Should be easier to handle :) and I don't know better way. (willy)
+             */
+            List<Part> alreadySelectedParts = new ArrayList<>();
+
             /**
              * Get a list of all the nozzles. We make a copy of the list so that we can modify
              * it within this function without modifying the machine. This makes the logic below
@@ -2409,12 +2480,14 @@ public class ReferencePnpJobProcessor extends AbstractPnpJobProcessor {
                  * respective lists so that we don't plan the same one again.
                  */
                 for (Nozzle nozzle : new ArrayList<>(nozzles)) {
-                    PlannedPlacement plannedPlacement = planWithoutNozzleTipChange(nozzle, jobPlacements);
+                    PlannedPlacement plannedPlacement = planWithoutNozzleTipChange(nozzle, jobPlacements
+                            , alreadySelectedParts);
                     if (plannedPlacement != null) {
                         plannedPlacements.add(plannedPlacement);
                         jobPlacements.remove(plannedPlacement.jobPlacement);
                         nozzles.remove(plannedPlacement.nozzle);
                         nozzleTips.remove(plannedPlacement.nozzleTip);
+                        alreadySelectedParts.add(plannedPlacement.jobPlacement.getPlacement().getPart());
                     }
                 }
             }
@@ -2426,12 +2499,14 @@ public class ReferencePnpJobProcessor extends AbstractPnpJobProcessor {
              * time we allow a nozzle tip change to happen.
              */
             for (Nozzle nozzle : new ArrayList<>(nozzles)) {
-                PlannedPlacement plannedPlacement = planWithNozzleTipChange(nozzle, jobPlacements, nozzleTips);
+                PlannedPlacement plannedPlacement = planWithNozzleTipChange(nozzle, jobPlacements, nozzleTips
+                        , alreadySelectedParts);
                 if (plannedPlacement != null) {
                     plannedPlacements.add(plannedPlacement);
                     jobPlacements.remove(plannedPlacement.jobPlacement);
                     nozzles.remove(plannedPlacement.nozzle);
                     nozzleTips.remove(plannedPlacement.nozzleTip);
+                    alreadySelectedParts.add(plannedPlacement.jobPlacement.getPlacement().getPart());
                 }
             }
 
@@ -2451,23 +2526,33 @@ public class ReferencePnpJobProcessor extends AbstractPnpJobProcessor {
          * remaining that are compatible with the currently loaded nozzle tip.
          * @param nozzle
          * @param jobPlacements
+         * @param alreadySelectedParts
+         * List of parts already selected to pick
          * @return
          */
         protected PlannedPlacement planWithoutNozzleTipChange(Nozzle nozzle, 
-                List<JobPlacement> jobPlacements) {
+                List<JobPlacement> jobPlacements, List<Part> alreadySelectedParts) {
             if (nozzle.getNozzleTip() == null) {
                 return null;
             }
+            PlannedPlacement firstMatch = null;
             for (JobPlacement jobPlacement : jobPlacements) {
                 Placement placement = jobPlacement.getPlacement();
                 Part part = placement.getPart();
                 org.openpnp.model.Package pkg = part.getPackage();
                 NozzleTip nozzleTip = nozzle.getNozzleTip();
                 if (pkg.getCompatibleNozzleTips().contains(nozzleTip)) {
-                    return new PlannedPlacement(nozzle, nozzleTip, jobPlacement);
+                    if (firstMatch == null) {
+                        //Remember the first match for later, not necessarily we can find better option.
+                        firstMatch = new PlannedPlacement(nozzle, nozzleTip, jobPlacement);
+                    }
+                    if (!alreadySelectedParts.contains(part) || !avoidConsecutivePicksFromSameFeeder) {
+                        return new PlannedPlacement(nozzle, nozzleTip, jobPlacement);
+                    }
                 }
             }
-            return null;
+            //if optimizer is not able to find better match, return the first match.
+           return firstMatch;
         }
 
         /**
@@ -2478,11 +2563,14 @@ public class ReferencePnpJobProcessor extends AbstractPnpJobProcessor {
          * @param nozzle
          * @param jobPlacements
          * @param nozzleTips
+         * @param alreadySelectedParts
+         * List of parts already selected to pick
          * @return
          */
         protected PlannedPlacement planWithNozzleTipChange(Nozzle nozzle, 
                 List<JobPlacement> jobPlacements,
-                List<NozzleTip> nozzleTips) {
+                List<NozzleTip> nozzleTips, List<Part> alreadySelectedParts) {
+            PlannedPlacement firstMatch = null;
             for (JobPlacement jobPlacement : jobPlacements) {
                 Placement placement = jobPlacement.getPlacement();
                 Part part = placement.getPart();
@@ -2499,10 +2587,16 @@ public class ReferencePnpJobProcessor extends AbstractPnpJobProcessor {
                         })
                         .collect(Collectors.toList());
                 if (!goodNozzleTips.isEmpty()) {
-                    return new PlannedPlacement(nozzle, goodNozzleTips.get(0), jobPlacement);
+                    if (firstMatch == null) {
+                        //Remember the first match for later, not necessarily we can find better option.
+                        firstMatch = new PlannedPlacement(nozzle, goodNozzleTips.get(0), jobPlacement);
+                    }
+                    if (!alreadySelectedParts.contains(part) || !avoidConsecutivePicksFromSameFeeder) {
+                        return new PlannedPlacement(nozzle, goodNozzleTips.get(0), jobPlacement);
+                    }
                 }
             }
-            return null;
+            return firstMatch;
         }
         
         @Override
