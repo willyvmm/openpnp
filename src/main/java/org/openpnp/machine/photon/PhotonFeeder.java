@@ -100,6 +100,9 @@ public class PhotonFeeder extends ReferenceFeeder {
     @Element(required = false)
     private Location offset;
 
+    // Flag indicating the async action was performed and feeder is ready for feed.
+    private boolean asyncFeedPerformed = false;
+
     private static PhotonBusInterface photonBus;
 
     public PhotonFeeder() {
@@ -111,6 +114,9 @@ public class PhotonFeeder extends ReferenceFeeder {
                 // Ensure actuators are added to the machine when it has PhotonFeeders
                 getDataActuator();
                 populatePhotonBus();
+
+                // Initialize async state
+                asyncFeedPerformed = false;
             }
         });
     }
@@ -370,59 +376,83 @@ public class PhotonFeeder extends ReferenceFeeder {
         int attempts = 0;
 
         // Send MoveForwardCommand using RS485.
-        int timeToWaitMillis = 0;
-        while (true) {
-            if (attempts++ > max_retry) {
-                throw new FeedFailureException("Failed to feed for an unknown reason. Is the feeder inserted?");
-            }
+        if (!asyncFeedPerformed) {
+            //legacy feed
+            int timeToWaitMillis = 0;
+            while (true) {
+                if (attempts++ > max_retry) {
+                    throw new FeedFailureException("Failed to feed for an unknown reason. Is the feeder inserted?");
+                }
 
-            findSlotAddressIfNeeded();
-            initializeIfNeeded();
+                findSlotAddressIfNeeded();
+                initializeIfNeeded();
 
-            if (!initialized) {
-                continue;
-            }
+                if (!initialized) {
+                    continue;
+                }
 
-            verifyFeederLocationIsFullyConfigured();
+                verifyFeederLocationIsFullyConfigured();
 
-            MoveFeedForward moveFeedForward = new MoveFeedForward(slotAddress, partPitch * 10);
-            MoveFeedForward.Response moveFeedForwardResponse = moveFeedForward.send(photonBus);
+                MoveFeedForward moveFeedForward = new MoveFeedForward(slotAddress, partPitch * 10);
+                MoveFeedForward.Response moveFeedForwardResponse = moveFeedForward.send(photonBus);
 
-            if (moveFeedForwardResponse == null) {
-                slotAddress = null;
-                initialized = false;
-                throw new FeedFailureException("Feed command timed out");
-            } else if (moveFeedForwardResponse.error == ErrorTypes.UNINITIALIZED_FEEDER) {
-                slotAddress = null;
-                initialized = false;
-                continue;  // We'll initialize it on a retry
-            }
+                if (moveFeedForwardResponse == null) {
+                    slotAddress = null;
+                    initialized = false;
+                    throw new FeedFailureException("Feed command timed out");
+                } else if (moveFeedForwardResponse.error == ErrorTypes.UNINITIALIZED_FEEDER) {
+                    slotAddress = null;
+                    initialized = false;
+                    continue;  // We'll initialize it on a retry
+                }
 
-            timeToWaitMillis = moveFeedForwardResponse.expectedTimeToFeed;
-            break;
-        }
-
-        // Wait for feedback from the feeder that the position has been reached.
-        attempts = 0;
-        while (true) {
-            if (attempts++ >= 3) {
-                throw new FeedFailureException("Feeder timed out when we requested a feed status update.");
-            }
-
-            //noinspection BusyWait
-            Thread.sleep(timeToWaitMillis);
-
-            MoveFeedStatus moveFeedStatus = new MoveFeedStatus(slotAddress);
-            MoveFeedStatus.Response moveFeedStatusResponse = moveFeedStatus.send(photonBus);
-
-            if (moveFeedStatusResponse == null) {
-                continue; // Timeout. retry after delay.
-            }
-
-            if (moveFeedStatusResponse.error == ErrorTypes.NONE) {
+                timeToWaitMillis = moveFeedForwardResponse.expectedTimeToFeed;
                 break;
-            } else if (moveFeedStatusResponse.error == ErrorTypes.COULD_NOT_REACH) {
-                throw new FeedFailureException("Feeder could not reach its destination.");
+            }
+
+            // Wait for feedback from the feeder that the position has been reached.
+            attempts = 0;
+            while (true) {
+                if (attempts++ >= 3) {
+                    throw new FeedFailureException("Feeder timed out when we requested a feed status update.");
+                }
+
+                //noinspection BusyWait
+                Thread.sleep(timeToWaitMillis);
+
+                MoveFeedStatus moveFeedStatus = new MoveFeedStatus(slotAddress);
+                MoveFeedStatus.Response moveFeedStatusResponse = moveFeedStatus.send(photonBus);
+
+                if (moveFeedStatusResponse == null) {
+                    continue; // Timeout. retry after delay.
+                }
+
+                if (moveFeedStatusResponse.error == ErrorTypes.NONE) {
+                    break;
+                } else if (moveFeedStatusResponse.error == ErrorTypes.COULD_NOT_REACH) {
+                    throw new FeedFailureException("Feeder could not reach its destination.");
+                }
+            }
+        } else {
+            //async feed
+            // try to get feedback from feeder 50 times. => 5 sec + timeouts.
+            for (int i = 0; i < 50; i++) {
+                MoveFeedStatus moveFeedStatus = new MoveFeedStatus(slotAddress);
+                MoveFeedStatus.Response moveFeedStatusResponse = moveFeedStatus.send(photonBus);
+
+                if (moveFeedStatusResponse == null) {
+                    // sleep for 100ms second and try again
+                    Thread.sleep(100);
+                    continue; // Timeout. retry after delay.
+                }
+
+                if (moveFeedStatusResponse.error == ErrorTypes.NONE) {
+                    return;
+                } else if (moveFeedStatusResponse.error == ErrorTypes.COULD_NOT_REACH) {
+                    throw new FeedFailureException("Feeder could not reach its destination.");
+                } else if(moveFeedStatusResponse.error == ErrorTypes.UNINITIALIZED_FEEDER) {
+                    throw new FeedFailureException("Feeder is uninitialized.");
+                }
             }
         }
 
@@ -624,33 +654,12 @@ public class PhotonFeeder extends ReferenceFeeder {
                 continue;  // We'll initialize it on a retry
             }
 
+            // set flag to inform feed function the pre-feed is already done.
+            asyncFeedPerformed = true;
             return;
         }
 
         throw new FeedFailureException("Failed to feed Async for an unknown reason. Is the feeder inserted?");
-    }
-
-    @Override
-    public void feedAsyncWaitForReady() throws Exception {
-        // send status requests until it comes back without timeout
-        for (int i = 0; i < 50; i++) {
-            MoveFeedStatus moveFeedStatus = new MoveFeedStatus(slotAddress);
-            MoveFeedStatus.Response moveFeedStatusResponse = moveFeedStatus.send(photonBus);
-
-            if (moveFeedStatusResponse == null) {
-                // sleep for 1 second and try again
-                Thread.sleep(100);
-                continue; // Timeout. retry after delay.
-            }
-
-            if (moveFeedStatusResponse.error == ErrorTypes.NONE) {
-                return;
-            } else if (moveFeedStatusResponse.error == ErrorTypes.COULD_NOT_REACH) {
-                throw new FeedFailureException("Feeder could not reach its destination.");
-            } else if(moveFeedStatusResponse.error == ErrorTypes.UNINITIALIZED_FEEDER) {
-                throw new FeedFailureException("Feeder is uninitialized.");
-            }
-        }
     }
 
     @Override

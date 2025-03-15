@@ -178,8 +178,4 @@ public abstract class AbstractFeeder extends AbstractModelObject implements Feed
         throw new UnsupportedOperationException("Asynchronous feed is not supported on this Feeder");
     }
 
-    @Override
-    public void feedAsyncWaitForReady() throws Exception{
-        throw new UnsupportedOperationException("Asynchronous feed is not supported on this Feeder");
-    }
 }

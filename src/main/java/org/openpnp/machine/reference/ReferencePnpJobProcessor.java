@@ -1384,7 +1384,8 @@ public class ReferencePnpJobProcessor extends AbstractPnpJobProcessor {
                  */
                 if (useAsyncFeed && feeder.isAsync()) {
                     try {
-                        feeder.feedAsyncWaitForReady();
+                        // feedAsyncWaitForReady replaced by modified feed
+                        feeder.feed(nozzle); //nozzle is now available
                     } catch (Exception e) {
                         throw new JobProcessorException(null, e);
                     }
