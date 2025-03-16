@@ -1382,7 +1382,7 @@ public class ReferencePnpJobProcessor extends AbstractPnpJobProcessor {
 
 
                 /*
-                 * For async operation, move nozzle over the pick location.
+                 * For async operation, move nozzle over the pick location before actual pick.
                  * Check if feeder is ready and - if necessary - wait until finish the feed action.
                  */
                 if (useAsyncFeed && feeder.isAsync()) {

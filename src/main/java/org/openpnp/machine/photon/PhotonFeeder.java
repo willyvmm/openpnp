@@ -436,6 +436,8 @@ public class PhotonFeeder extends ReferenceFeeder {
             }
         }
 
+        asyncFeedPerformed = false;
+        
     /*    } else {
             // Async feed
             // Clear flag
