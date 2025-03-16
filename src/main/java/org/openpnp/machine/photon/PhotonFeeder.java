@@ -25,7 +25,6 @@ import org.openpnp.model.Solutions;
 import org.openpnp.spi.*;
 import org.openpnp.util.MovableUtils;
 import org.openpnp.util.OpenCvUtils;
-import org.openpnp.util.Utils2D;
 import org.openpnp.util.VisionUtils;
 import org.openpnp.vision.pipeline.CvPipeline;
 import org.openpnp.vision.pipeline.CvStage;
@@ -377,8 +376,8 @@ public class PhotonFeeder extends ReferenceFeeder {
 
         // Send MoveForwardCommand using RS485.
         if (!asyncFeedPerformed) {
-            //legacy feed
             int timeToWaitMillis = 0;
+            //legacy feed
             while (true) {
                 if (attempts++ > max_retry) {
                     throw new FeedFailureException("Failed to feed for an unknown reason. Is the feeder inserted?");
@@ -409,31 +408,35 @@ public class PhotonFeeder extends ReferenceFeeder {
                 timeToWaitMillis = moveFeedForwardResponse.expectedTimeToFeed;
                 break;
             }
+            //noinspection BusyWait but only half the amount of time.
+            Thread.sleep(timeToWaitMillis >> 2);
+        }
 
-            // Wait for feedback from the feeder that the position has been reached.
-            attempts = 0;
-            while (true) {
-                if (attempts++ >= 3) {
-                    throw new FeedFailureException("Feeder timed out when we requested a feed status update.");
-                }
-
-                //noinspection BusyWait
-                Thread.sleep(timeToWaitMillis);
-
-                MoveFeedStatus moveFeedStatus = new MoveFeedStatus(slotAddress);
-                MoveFeedStatus.Response moveFeedStatusResponse = moveFeedStatus.send(photonBus);
-
-                if (moveFeedStatusResponse == null) {
-                    continue; // Timeout. retry after delay.
-                }
-
-                if (moveFeedStatusResponse.error == ErrorTypes.NONE) {
-                    break;
-                } else if (moveFeedStatusResponse.error == ErrorTypes.COULD_NOT_REACH) {
-                    throw new FeedFailureException("Feeder could not reach its destination.");
-                }
+        // Wait for feedback from the feeder that the position has been reached.
+        attempts = 0;
+        while (true) {
+            if (attempts++ >= 32) {
+                throw new FeedFailureException("Feeder timed out when we requested a feed status update.");
             }
-        } else {
+
+
+            MoveFeedStatus moveFeedStatus = new MoveFeedStatus(slotAddress);
+            MoveFeedStatus.Response moveFeedStatusResponse = moveFeedStatus.send(photonBus);
+
+            if (moveFeedStatusResponse == null) {
+                // in ccase of timeout, sleep 100ms
+                Thread.sleep(100);
+                continue; // Timeout. retry after delay.
+            }
+
+            if (moveFeedStatusResponse.error == ErrorTypes.NONE) {
+                break;
+            } else if (moveFeedStatusResponse.error == ErrorTypes.COULD_NOT_REACH) {
+                throw new FeedFailureException("Feeder could not reach its destination.");
+            }
+        }
+
+    /*    } else {
             // Async feed
             // Clear flag
             asyncFeedPerformed = false;
@@ -449,7 +452,7 @@ public class PhotonFeeder extends ReferenceFeeder {
                 }
 
                 if (moveFeedStatusResponse.error == ErrorTypes.NONE) {
-                    return;
+                    break;
                 } else if (moveFeedStatusResponse.error == ErrorTypes.COULD_NOT_REACH) {
                     throw new FeedFailureException("Feeder could not reach its destination.");
                 } else if(moveFeedStatusResponse.error == ErrorTypes.UNINITIALIZED_FEEDER) {
@@ -457,7 +460,7 @@ public class PhotonFeeder extends ReferenceFeeder {
                 }
             }
         }
-
+*/
         // Moving the tape forward implies that if the part pitch is different
         // than the holePitch, then the linear distance between the hole and the
         // part would change. In most cases this is a multiple and this code

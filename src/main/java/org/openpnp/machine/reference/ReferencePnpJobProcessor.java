@@ -32,6 +32,7 @@ import java.util.Map;
 
 import javax.swing.SwingUtilities;
 
+import com.jgoodies.forms.layout.ConstantSize;
 import org.openpnp.Translations;
 import org.openpnp.gui.JobPanel;
 import org.openpnp.gui.MainFrame;
@@ -1374,22 +1375,30 @@ public class ReferencePnpJobProcessor extends AbstractPnpJobProcessor {
 
                 // Prepare the Nozzle for pick-to-place articulation.
                 Location placementLocation = Utils2D.calculateBoardPlacementLocation(jobPlacement.getBoardLocation(), jobPlacement.getPlacement().getLocation());
-                nozzle.prepareForPickAndPlaceArticulation(feeder.getPickLocation(), placementLocation);
 
-                // Move to pick location.
-                nozzle.moveToPickLocation(feeder);
+                // for safe operation with async feeder its necessary to split the movement into two phases.
+                Location pickLocation =  feeder.getPickLocation();
+                nozzle.prepareForPickAndPlaceArticulation(pickLocation, placementLocation);
 
-                /**
+
+                /*
+                 * For async operation, move nozzle over the pick location.
                  * Check if feeder is ready and - if necessary - wait until finish the feed action.
                  */
                 if (useAsyncFeed && feeder.isAsync()) {
                     try {
+                        //move at safe Z to pick location
+                        MovableUtils.moveToLocationAtSafeZ(nozzle, pickLocation.deriveLengths(null, null, nozzle.getEffectiveSafeZ(), null));
+
                         // feedAsyncWaitForReady replaced by modified feed
-                        feeder.feed(nozzle); //nozzle is now available
+                        feeder.feed(nozzle); //nozzle is now available in async mode
                     } catch (Exception e) {
                         throw new JobProcessorException(null, e);
                     }
                 }
+
+                // Move to pick location.
+                nozzle.moveToPickLocation(feeder);
 
                 // Pick
                 nozzle.pick(part);
