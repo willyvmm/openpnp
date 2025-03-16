@@ -434,7 +434,9 @@ public class PhotonFeeder extends ReferenceFeeder {
                 }
             }
         } else {
-            //async feed
+            // Async feed
+            // Clear flag
+            asyncFeedPerformed = false;
             // try to get feedback from feeder 50 times. => 5 sec + timeouts.
             for (int i = 0; i < 50; i++) {
                 MoveFeedStatus moveFeedStatus = new MoveFeedStatus(slotAddress);
