@@ -1,3 +1,42 @@
+####This is my build of OpenPNP that include all known Photon feeder related 
+improvements with addition of my custom async patch for openpnp and improved job planner.
+
+This build is based on commit 2bd605345690270f6482ae64ed0ccf8a9b632e81 from test branch.
+
+Everything is working and tested as far as possible by me, but more testing and feedback are welcome.
+
+### This patch include:
+* Async Patch for OpenPNP - allow asynchronous feeder operation
+* Implementation of Async feeders with Photon Feeders (also include full Photon feeder support from Opulo)
+* Photon Feeder Visual AID from PR#1619: https://github.com/openpnp/openpnp/pull/1619 - fully integrated with async patch
+* Improved Job Planner - avoid 2 consequential picks from same feeder - if possible.
+
+
+####All above options are configurable and easy to turn OFF.
+
+
+###Because of:
+* the Photon patch does not meet coding requirements for openpn.
+* There are many limitation and requirements for sending PR.
+* I dont have time nor feel like i want to create PR.
+
+I dont have plan to create a PR for that "patch".
+
+
+####Please feel free to turn it into a PR and send it to OpenPNP the official way.
+
+If you find any error in this implementation, plese let me know, *I will fix it.*
+
+If you need any feature, just try your luck. If I judge it useful, there is a chance that I'll implement it for you.
+
+You can find me somewhere on discord *RETROHAX.NET* or *LumenPnP* as *willy*.
+
+The source is available on my github: https://github.com/willyvmm/openpnp/ and is linked to main opnp repository.
+
+Please remember, the files: VERSION.txt and CHANGES.md are changed by me to include this message! 
+
+****************************************************************************************
+
 This file lists major or notable changes to OpenPnP in chronological order. This is not
 a complete change list, only those that may directly interest or affect users.
 

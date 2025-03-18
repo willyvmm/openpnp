@@ -1391,7 +1391,7 @@ public class ReferencePnpJobProcessor extends AbstractPnpJobProcessor {
                         MovableUtils.moveToLocationAtSafeZ(nozzle, pickLocation.deriveLengths(null, null, nozzle.getEffectiveSafeZ(), null));
 
                         // feedAsyncWaitForReady replaced by modified feed
-                        feeder.feed(nozzle); //nozzle is now available in async mode
+                        feeder.feedAsyncCompletion(nozzle); //nozzle is now available in async mode
                     } catch (Exception e) {
                         throw new JobProcessorException(null, e);
                     }

@@ -143,9 +143,16 @@ public interface Feeder extends Identifiable, Named, WizardConfigurable, Propert
     /**
      * Perform asynchronous feed action. May be usable with slow feeders.
      * Async feed action may not interact with head, due to async nature.
-     * This is a Pre-action for Feed, and regular feed should be called to finish the feed.
+     * This is a Pre-action for Feed, and asyncFeedComplete.
      * @throws Exception
      */
     public void feedAsync() throws Exception;
+
+    /**
+     * Clean up async feed, and finish the feed, make sure the feeder is clear for pick.
+     * As the async action is now complete, the action may interact with the nozzle.
+     * @throws Exception
+     */
+    public void feedAsyncCompletion(Nozzle nozzle) throws Exception;
 
 }

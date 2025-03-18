@@ -437,32 +437,7 @@ public class PhotonFeeder extends ReferenceFeeder {
         }
 
         asyncFeedPerformed = false;
-        
-    /*    } else {
-            // Async feed
-            // Clear flag
-            asyncFeedPerformed = false;
-            // try to get feedback from feeder 50 times. => 5 sec + timeouts.
-            for (int i = 0; i < 50; i++) {
-                MoveFeedStatus moveFeedStatus = new MoveFeedStatus(slotAddress);
-                MoveFeedStatus.Response moveFeedStatusResponse = moveFeedStatus.send(photonBus);
 
-                if (moveFeedStatusResponse == null) {
-                    // sleep for 100ms second and try again
-                    Thread.sleep(100);
-                    continue; // Timeout. retry after delay.
-                }
-
-                if (moveFeedStatusResponse.error == ErrorTypes.NONE) {
-                    break;
-                } else if (moveFeedStatusResponse.error == ErrorTypes.COULD_NOT_REACH) {
-                    throw new FeedFailureException("Feeder could not reach its destination.");
-                } else if(moveFeedStatusResponse.error == ErrorTypes.UNINITIALIZED_FEEDER) {
-                    throw new FeedFailureException("Feeder is uninitialized.");
-                }
-            }
-        }
-*/
         // Moving the tape forward implies that if the part pitch is different
         // than the holePitch, then the linear distance between the hole and the
         // part would change. In most cases this is a multiple and this code
@@ -636,6 +611,12 @@ public class PhotonFeeder extends ReferenceFeeder {
         return true;
     }
 
+    /**
+     * Async feed action
+     * Send feed command to the feeder, and get control back to the min thread.
+     *
+     * @throws Exception
+     */
     @Override
     public void feedAsync() throws Exception {
         for (int i = 0; i <= photonProperties.getFeederCommunicationMaxRetry(); i++) {
@@ -662,11 +643,27 @@ public class PhotonFeeder extends ReferenceFeeder {
             }
 
             // set flag to inform feed function the pre-feed is already done.
+            // should not be necessary here, because we call feedAsyncCompletion function before pick.
+            // But in case of any unscheduled feed we want to inform main feed method, the feed is done.
+            // unscheduled feed is fx manual feed or sth.
             asyncFeedPerformed = true;
             return;
         }
 
         throw new FeedFailureException("Failed to feed Async for an unknown reason. Is the feeder inserted?");
+    }
+
+    /**
+     * Finish the async Feed action.
+     * Set a flag to inform the main feed method to do not feed, just wait for feed completion and take
+     * And do whatever is necessary to prepare for pick.
+     * @param nozzle
+     */
+    @Override
+    public void feedAsyncCompletion(Nozzle nozzle) throws Exception {
+        // set flag to inform feed function the pre-feed is already done.
+        asyncFeedPerformed = true;
+        feed(nozzle);
     }
 
     @Override

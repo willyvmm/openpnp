@@ -120,7 +120,8 @@ public class Main {
         // when loading wizards. This was most apparent on Feeders.
         // Note that the bug was fixed in Subversion in revision 629:
         // https://java.net/projects/beansbinding/sources/svn/revision/629
-        // But it is unlikely this will ever be released to Maven.
+        // But it is unlikely this will ever be release
+        // d to Maven.
         // This hack was found at http://blog.marcnuri.com/beansbinding-performance-issue-37/
         try {
             ClassPool cp = ClassPool.getDefault();
