@@ -429,7 +429,11 @@ public class PhotonFeeder extends ReferenceFeeder {
                 continue; // Timeout. retry after delay.
             }
 
-            if (moveFeedStatusResponse.error == ErrorTypes.NONE) {
+            //
+            //  WORKAROUND !!!!!!!
+            //
+            //the below is temporary workaround until I understand why feeder suddenly drop this status.
+            if ((moveFeedStatusResponse.error == ErrorTypes.NONE) || (moveFeedStatusResponse.error == ErrorTypes.UNKNOWN)) {
                 break;
             } else if (moveFeedStatusResponse.error == ErrorTypes.COULD_NOT_REACH) {
                 throw new FeedFailureException("Feeder could not reach its destination.");
